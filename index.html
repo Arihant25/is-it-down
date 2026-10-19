@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Is It Down? Live IIIT Hyderabad LAN Status, Speed and Outages</title>
+<script>
+  // Start fetching the monitor's data before anything else parses.
+  window.__data = Promise.all(['status', 'outages', 'speed'].map(n =>
+    fetch(`https://raw.githubusercontent.com/Arihant25/is-it-down/data/${n}.json?t=${Math.floor(Date.now() / 30000)}`)
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`${n}: ${r.status}`)))));
+</script>
+<link rel="preconnect" href="https://raw.githubusercontent.com" crossorigin>
+<meta name="description" content="Is the IIIT Hyderabad (IIITH) LAN down right now? Live campus network status checked every minute, current download and upload speed, uptime and a full outage history.">
+<meta name="keywords" content="IIIT Hyderabad, IIITH, LAN, internet down, campus network status, Bakul Nivas, outage, speed test, uptime">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://arihant25.github.io/is-it-down/">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f6f6f4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111110" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Is It Down?">
+<meta property="og:title" content="Is It Down? IIIT Hyderabad LAN status">
+<meta property="og:description" content="Live status, speed and outage history of the IIIT Hyderabad LAN, checked every minute.">
+<meta property="og:url" content="https://arihant25.github.io/is-it-down/">
+<meta property="og:image" content="https://arihant25.github.io/is-it-down/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Is It Down? IIIT Hyderabad LAN status">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Is It Down? IIIT Hyderabad LAN status">
+<meta name="twitter:description" content="Live status, speed and outage history of the IIIT Hyderabad LAN, checked every minute.">
+<meta name="twitter:image" content="https://arihant25.github.io/is-it-down/og.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "name": "Is It Down?",
+  "url": "https://arihant25.github.io/is-it-down/",
+  "description": "Live status, speed and outage history of the IIIT Hyderabad LAN, checked every minute from a Raspberry Pi in Bakul Nivas.",
+  "inLanguage": "en",
+  "about": {"@type": "CollegeOrUniversity", "name": "International Institute of Information Technology, Hyderabad", "sameAs": "https://www.iiit.ac.in/"}
+}
+</script>
+<style>
+:root {
+  --bg: #f6f6f4; --surface: #fcfcfb; --border: #e4e3df;
+  --text: #0b0b0b; --text-2: #52514e; --text-3: #6f6e69; --grid: #ecebe7;
+  --good: #0ca30c; --warn: #fab219; --bad: #d03b3b; --none: #d9d8d3;
+  --s1: #2a78d6; --s2: #eb6834;
+  --good-tint: #e8f6e8; --bad-tint: #fbeaea;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111110; --surface: #1a1a19; --border: #2c2c2a;
+    --text: #f0efec; --text-2: #c3c2b7; --text-3: #8f8e86; --grid: #2a2a28; --none: #383835;
+    --s1: #3987e5; --s2: #d95926;
+    --good-tint: #15291a; --bad-tint: #321818;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+main { max-width: 880px; margin: 0 auto; padding: 32px 16px 48px; }
+h1 { font-size: 28px; margin: 0; letter-spacing: -0.02em; }
+h2 { font-size: 16px; margin: 0; }
+.sub { margin: 4px 0 24px; color: var(--text-2); }
+a { color: var(--s1); }
+.icon { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+.hero { display: flex; align-items: center; gap: 18px; padding: 24px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface); min-height: 102px; }
+.hero.up { background: var(--good-tint); border-color: color-mix(in srgb, var(--good) 35%, transparent); }
+.hero.down, .hero.stale { background: var(--bad-tint); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
+.hero-icon { flex: none; width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-size: 28px; background: var(--none); }
+.hero-icon .icon { display: none; stroke-width: 3; }
+.hero.up .hero-icon { background: var(--good); }
+.hero.down .hero-icon, .hero.stale .hero-icon { background: var(--bad); }
+.hero.up .i-up, .hero.down .i-down, .hero.stale .i-stale, .hero.loading .i-loading { display: block; }
+.hero.loading .i-loading { animation: spin 1.2s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .hero.loading .i-loading { animation: none; } }
+.hero-title { font-size: 26px; font-weight: 700; letter-spacing: -0.01em; }
+.hero-detail { color: var(--text-2); }
+
+.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 16px; }
+.tile { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+.tile-label { color: var(--text-2); font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.tile-value { font-size: 24px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.tile-value small { font-size: 14px; font-weight: 500; color: var(--text-2); margin-left: 2px; }
+.note { color: var(--text-3); font-size: 13px; margin: 8px 2px 0; min-height: 20px; }
+
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; margin-top: 16px; }
+.card-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.uptime-stats { display: flex; gap: 16px; color: var(--text-2); font-size: 13px; font-variant-numeric: tabular-nums; }
+.uptime-stats b { color: var(--text); font-weight: 600; }
+.bars { display: flex; gap: 2px; height: 36px; }
+.bar { flex: 1; border-radius: 2px; background: var(--none); min-width: 0; }
+.bar.good { background: var(--good); } .bar.warn { background: var(--warn); } .bar.bad { background: var(--bad); }
+.bar:hover { opacity: .75; }
+.bars-axis { display: flex; justify-content: space-between; color: var(--text-3); font-size: 12px; margin-top: 6px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; color: var(--text-2); font-size: 13px; margin-top: 10px; }
+.card-head + .legend { margin: -4px 0 8px; }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.sw.good { background: var(--good); } .sw.warn { background: var(--warn); } .sw.bad { background: var(--bad); } .sw.none { background: var(--none); }
+.sw.s1, .sw.s2 { height: 3px; width: 14px; vertical-align: 3px; }
+.sw.s1 { background: var(--s1); } .sw.s2 { background: var(--s2); }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.seg button { font: inherit; font-size: 13px; padding: 4px 12px; border: 0; background: transparent; color: var(--text-2); cursor: pointer; }
+.seg button[aria-selected="true"] { background: var(--text); color: var(--surface); }
+.chart { position: relative; height: 240px; }
+.chart svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.chart .axis text { fill: var(--text-3); font-size: 11px; font-variant-numeric: tabular-nums; }
+.chart .grid line { stroke: var(--grid); }
+.chart .empty { fill: var(--text-3); font-size: 13px; }
+.chart .crosshair { stroke: var(--text-3); stroke-dasharray: 3 3; }
+.chart .dl { font-size: 11px; font-weight: 600; fill: var(--text-2); }
+.toggle { color: var(--text-2); font-size: 13px; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.table-wrap { max-height: 420px; overflow: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+th { text-align: left; color: var(--text-2); font-weight: 500; font-size: 13px; padding: 6px 8px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface); }
+td { padding: 8px; border-bottom: 1px solid var(--grid); }
+tr.offline td { color: var(--text-3); }
+tr.ongoing td { color: var(--bad); font-weight: 600; }
+td.empty { color: var(--text-3); text-align: center; padding: 20px; }
+.tooltip { position: fixed; pointer-events: none; z-index: 10; opacity: 0; background: var(--text); color: var(--surface); font-size: 12px; line-height: 1.5; padding: 6px 9px; border-radius: 6px; max-width: 240px; transition: opacity .1s; }
+.tooltip.show { opacity: 1; }
+.tooltip .icon { vertical-align: -2px; margin-right: 4px; }
+footer { margin-top: 24px; color: var(--text-3); font-size: 13px; text-align: center; }
+@media (max-width: 640px) {
+  main { padding-top: 20px; }
+  .tiles { grid-template-columns: repeat(2, 1fr); }
+  .hero { padding: 18px; }
+  .hero-title { font-size: 22px; }
+  .card { padding: 16px; }
+  .uptime-stats { gap: 10px; }
+  .bars { gap: 1px; }
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-question" viewBox="0 0 24 24"><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01"/></symbol>
+  <symbol id="i-loader" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v12m-5-5 5 5 5-5M5 20h14"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 20V8m-5 5 5-5 5 5M5 4h14"/></symbol>
+  <symbol id="i-activity" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></symbol>
+</svg>
+<main>
+  <header>
+    <h1>Is It Down?</h1>
+    <p class="sub">Live status of the IIIT Hyderabad LAN, checked every minute from a Raspberry Pi in Bakul Nivas.</p>
+  </header>
+
+  <section id="hero" class="hero loading" aria-live="polite">
+    <div class="hero-icon" aria-hidden="true">
+      <svg class="icon i-up"><use href="#i-check"/></svg>
+      <svg class="icon i-down"><use href="#i-x"/></svg>
+      <svg class="icon i-stale"><use href="#i-question"/></svg>
+      <svg class="icon i-loading"><use href="#i-loader"/></svg>
+    </div>
+    <div>
+      <div class="hero-title" id="hero-title">Checking…</div>
+      <div class="hero-detail" id="hero-detail">Loading the latest report from the monitor.</div>
+    </div>
+  </section>
+
+  <section class="tiles" aria-label="Current measurements">
+    <div class="tile"><div class="tile-label"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg>Download</div><div class="tile-value" id="t-down">–</div></div>
+    <div class="tile"><div class="tile-label"><svg class="icon" aria-hidden="true"><use href="#i-upload"/></svg>Upload</div><div class="tile-value" id="t-up">–</div></div>
+    <div class="tile"><div class="tile-label"><svg class="icon" aria-hidden="true"><use href="#i-activity"/></svg>Ping</div><div class="tile-value" id="t-ping">–</div></div>
+    <div class="tile"><div class="tile-label"><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg>Uptime, 30 days</div><div class="tile-value" id="t-uptime">–</div></div>
+  </section>
+  <p class="note" id="speed-note"></p>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Uptime</h2>
+      <div class="uptime-stats" id="uptime-stats"></div>
+    </div>
+    <div class="bars" id="bars" role="img" aria-label="Daily uptime for the last 90 days"></div>
+    <div class="bars-axis"><span>90 days ago</span><span>Today</span></div>
+    <div class="legend">
+      <span><i class="sw good"></i>No downtime</span>
+      <span><i class="sw warn"></i>Under 1 hour down</span>
+      <span><i class="sw bad"></i>1 hour or more down</span>
+      <span><i class="sw none"></i>No data</span>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Speed</h2>
+      <div class="seg" role="tablist" aria-label="Time range">
+        <button role="tab" data-range="7d" aria-selected="true">7 days</button>
+        <button role="tab" data-range="all" aria-selected="false">All time</button>
+      </div>
+    </div>
+    <div class="legend">
+      <span><i class="sw s1"></i>Download</span>
+      <span><i class="sw s2"></i>Upload</span>
+    </div>
+    <div class="chart" id="chart"></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Outage history</h2>
+      <label class="toggle"><input type="checkbox" id="show-offline"> Show monitor-offline gaps</label>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Started</th><th>Ended</th><th>Duration</th></tr></thead>
+        <tbody id="outages"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <noscript><p class="note">This page needs JavaScript to load the live status.</p></noscript>
+  <footer>
+    <span id="footer-updated"></span>
+    · <a href="https://github.com/Arihant25/is-it-down">Source on GitHub</a>
+  </footer>
+</main>
+<div class="tooltip" id="tooltip" role="tooltip"></div>
+<script src="app.js" defer></script>
+</body>
+</html>
