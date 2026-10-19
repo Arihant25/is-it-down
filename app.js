@@ -14,6 +14,7 @@ const fmtTime = ts => new Intl.DateTimeFormat('en-IN', {
 const fmtFull = ts => new Intl.DateTimeFormat('en-IN', {
   timeZone: TZ, day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
 }).format(ts * 1000);
+const fmtHour = ts => new Intl.DateTimeFormat('en-IN', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false }).format(ts * 1000);
 const fmtDay = ts => new Intl.DateTimeFormat('en-IN', { timeZone: TZ, day: 'numeric', month: 'short' }).format(ts * 1000);
 
 function fmtDur(s) {
@@ -159,7 +160,8 @@ function renderChart() {
     el('text', { x: W / 2, y: H / 2, 'text-anchor': 'middle', class: 'empty' }, svg).textContent = 'No speed tests yet';
     return;
   }
-  const x0 = pts[0].ts, x1 = Math.max(pts[pts.length - 1].ts, x0 + 3600);
+  let x0 = pts[0].ts, x1 = pts[pts.length - 1].ts;
+  if (x1 - x0 < 3600) { const mid = (x0 + x1) / 2; x0 = mid - 43200; x1 = mid + 43200; }
   const yMax = niceMax(Math.max(...pts.map(p => Math.max(p.down, p.up))) * 1.05);
   const X = t => m.l + (t - x0) / (x1 - x0) * (W - m.l - m.r);
   const Y = v => H - m.b - v / yMax * (H - m.t - m.b);
@@ -174,7 +176,7 @@ function renderChart() {
   for (let i = 0; i <= ticks; i++) {
     const t = x0 + (x1 - x0) * i / ticks;
     el('text', { x: X(t), y: H - 6, 'text-anchor': i === 0 ? 'start' : i === ticks ? 'end' : 'middle' }, axis)
-      .textContent = fmtDay(t);
+      .textContent = x1 - x0 < 2 * 86400 ? fmtHour(t) : fmtDay(t);
   }
 
   const series = [['down', 'var(--s1)', 'Download'], ['up', 'var(--s2)', 'Upload']];
@@ -184,6 +186,9 @@ function renderChart() {
       fill: 'none', stroke: color, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round',
     }, svg);
   }
+  // markers while data is sparse, so single tests are visible
+  if (pts.length <= 48) for (const [k, color] of series) for (const p of pts)
+    el('circle', { cx: X(p.ts), cy: Y(p[k]), r: 4, fill: color, stroke: 'var(--surface)', 'stroke-width': 2 }, svg);
   // direct labels on the latest values, nudged apart if they collide
   const last = pts[pts.length - 1];
   let yd = Y(last.down) + 4, yu = Y(last.up) + 4;
