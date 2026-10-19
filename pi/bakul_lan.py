@@ -3,7 +3,7 @@
 
 Subcommands (each run by its own systemd timer):
   probe    every minute: check connectivity, record state, watch the hotspot
-  speed    every 30 min: run an Ookla speedtest
+  speed    every 3 hours: run an Ookla speedtest
   publish  every 5 min:  build JSON and force-push it as a single commit to the `data` branch
   prune    daily:        drop old raw probes
 """

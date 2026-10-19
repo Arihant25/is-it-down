@@ -80,8 +80,8 @@ function render() {
   const u = s.uptime['30d'];
   $('t-uptime').innerHTML = u != null ? `${fmtPct(u)}<small>%</small>` : '–';
   $('speed-note').textContent = sp
-    ? `Speed tested every 30 min, last ${ago(sp.ts)} via ${sp.server}. Ping is to 1.1.1.1, checked every minute.`
-    : 'Speed is tested every 30 minutes; no result yet.';
+    ? `Speed tested every 3 hours, last ${ago(sp.ts)} via ${sp.server}. Ping is to 1.1.1.1, checked every minute.`
+    : 'Speed is tested every 3 hours; no result yet.';
 
   $('uptime-stats').innerHTML = [['24h', '24 h'], ['7d', '7 days'], ['30d', '30 days'], ['all', 'All time']]
     .map(([k, l]) => `<span>${l} <b>${s.uptime[k] != null ? fmtPct(s.uptime[k]) + '%' : '–'}</b></span>`).join('');
@@ -187,7 +187,7 @@ function renderChart() {
     }, svg);
   }
   // markers while data is sparse, so single tests are visible
-  if (pts.length <= 48) for (const [k, color] of series) for (const p of pts)
+  if (pts.length <= 60) for (const [k, color] of series) for (const p of pts)
     el('circle', { cx: X(p.ts), cy: Y(p[k]), r: 4, fill: color, stroke: 'var(--surface)', 'stroke-width': 2 }, svg);
   // direct labels on the latest values, nudged apart if they collide
   const last = pts[pts.length - 1];

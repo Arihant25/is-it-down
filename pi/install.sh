@@ -58,7 +58,7 @@ WantedBy=timers.target
 EOF
 }
 unit probe   '*:*:00'          55
-unit speed   '*:05,35:10'      240
+unit speed   '00/3:05:10'      240
 unit publish '*:0/5:30'        120
 unit prune   '*-*-* 04:10:00'  600
 
