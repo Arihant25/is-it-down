@@ -71,10 +71,7 @@ a { color: var(--s1); }
 .icon { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
 .brand { display: flex; justify-content: space-between; align-items: center; color: var(--text-2); font-size: 14px; font-weight: 600; }
-.brand-name { display: flex; align-items: center; gap: 8px; color: var(--text); }
-.brand-name .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--none); }
-.up .brand-name .dot { background: var(--good); }
-.down .brand-name .dot, .stale .brand-name .dot { background: var(--bad); }
+.brand-name { color: var(--text); }
 .refresh {
   font: inherit; font-size: 13px; font-weight: 500; color: var(--text-2); background: var(--surface);
   border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px; cursor: pointer;
@@ -169,7 +166,7 @@ footer { margin-top: 24px; color: var(--text-3); font-size: 13px; text-align: ce
 </svg>
 <main>
   <div class="brand">
-    <span class="brand-name"><span class="dot" aria-hidden="true"></span>Is It Down?</span>
+    <span class="brand-name">Is It Down?</span>
     <button class="refresh" id="refresh" type="button" aria-label="Refresh status">
       <svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg>Refresh
     </button>
