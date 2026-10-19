@@ -105,10 +105,6 @@ function renderTiles() {
   $('t-down').innerHTML = sp ? `${sp.down.toFixed(1)}<small>Mbps</small>` : '–';
   $('t-up').innerHTML = sp ? `${sp.up.toFixed(1)}<small>Mbps</small>` : '–';
   $('t-ping').innerHTML = s.latency_ms != null ? `${Math.round(s.latency_ms)}<small>ms</small>` : '–';
-  const u = s.uptime['30d'];
-  $('t-uptime').innerHTML = u != null ? `${fmtPct(u)}<small>%</small>` : '–';
-  const days = Math.ceil((nowSec() - s.monitoring_since) / 86400);
-  $('t-uptime-caption').textContent = days < 30 ? `Since ${fmtDay(s.monitoring_since)}` : 'Last 30 days';
   $('speed-note').textContent = 'Measured from a Raspberry Pi in Bakul Nivas.' +
     (sp ? ` Speed last tested ${ago(sp.ts)}.` : '');
 
@@ -128,7 +124,7 @@ function el(tag, attrs, parent) {
 
 function sparkline(svg, pts, fmtVal) {
   svg.replaceChildren();
-  svg.onpointermove = svg.onpointerleave = null;
+  svg.onpointermove = svg.onpointerdown = svg.onpointerleave = null;
   const W = svg.clientWidth, H = svg.clientHeight;
   if (!W || !pts.length) return;
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
@@ -152,6 +148,7 @@ function sparkline(svg, pts, fmtVal) {
     place(best);
     showTip(ev, `<b>${fmtTime(best[0])}</b><br>${fmtVal(best[1])}`);
   };
+  svg.onpointerdown = svg.onpointermove; // a tap shows the tooltip on touch screens
   svg.onpointerleave = () => { place(pts[pts.length - 1]); hideTip(); };
 }
 
@@ -253,16 +250,22 @@ function showTip(ev, html) {
 }
 const hideTip = () => $('tooltip').classList.remove('show');
 for (const id of ['bars', 'heat']) {
-  $(id).addEventListener('pointermove', ev => {
+  const onPointer = ev => {
     const t = ev.target.closest('[data-tip]');
     if (t) showTip(ev, t.dataset.tip); else hideTip();
-  });
+  };
+  $(id).addEventListener('pointermove', onPointer);
+  $(id).addEventListener('pointerdown', onPointer);
   $(id).addEventListener('pointerleave', hideTip);
 }
 
 $('refresh').addEventListener('click', () => load(true));
 $('show-offline').addEventListener('change', () => state.status && renderTable());
 let rt;
+// Tapping anywhere else dismisses a tooltip opened by touch.
+document.addEventListener('pointerdown', ev => {
+  if (!ev.target.closest('[data-tip], .spark')) hideTip();
+});
 addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => state.status && renderTiles(), 150); });
 
 // Poll once a minute while the tab is visible; keep the "for X min" text ticking in between.

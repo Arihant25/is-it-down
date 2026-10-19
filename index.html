@@ -70,8 +70,7 @@ h2 { font-size: 16px; margin: 0; }
 a { color: var(--s1); }
 .icon { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
-.brand { display: flex; justify-content: space-between; align-items: center; color: var(--text-2); font-size: 14px; font-weight: 600; }
-.brand-name { color: var(--text); }
+.answer-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .refresh {
   font: inherit; font-size: 13px; font-weight: 500; color: var(--text-2); background: var(--surface);
   border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px; cursor: pointer;
@@ -83,7 +82,7 @@ a { color: var(--s1); }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .refresh.busy .icon { animation: none; } }
 
-.answer { padding: 40px 0 32px; }
+.answer { padding: 24px 0 32px; }
 .answer h1 { font-size: 20px; font-weight: 600; color: var(--text-2); margin: 0; letter-spacing: -0.01em; }
 .answer-word {
   font-size: clamp(88px, 22vw, 168px); font-weight: 800; line-height: 1; letter-spacing: -0.05em;
@@ -94,7 +93,8 @@ a { color: var(--s1); }
 .answer-detail { font-size: 19px; margin: 0; max-width: 40em; }
 .answer-meta { color: var(--text-3); margin: 6px 0 0; font-size: 14px; }
 
-.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; transition: opacity .2s; }
+.down .tiles, .stale .tiles { opacity: .55; }
 .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px 12px; min-width: 0; }
 .tile-label { color: var(--text-2); font-size: 13px; display: flex; align-items: center; gap: 6px; }
 .tile-value { font-size: 24px; font-weight: 650; font-variant-numeric: tabular-nums; }
@@ -142,10 +142,15 @@ td.empty { color: var(--text-3); text-align: center; padding: 20px; }
 footer { margin-top: 24px; color: var(--text-3); font-size: 13px; text-align: center; }
 .heart { fill: #e0457b; stroke: none; vertical-align: -2px; }
 @media (max-width: 640px) {
-  .answer { padding: 28px 0 24px; }
+  .answer { padding: 12px 0 24px; }
   .answer h1 { font-size: 17px; }
   .answer-detail { font-size: 17px; }
-  .tiles { grid-template-columns: repeat(2, 1fr); }
+  .tiles { gap: 8px; }
+  .tile { padding: 12px 10px 10px; }
+  .tile-value { font-size: 20px; }
+  .tile-value small { font-size: 12px; }
+  .refresh { padding: 7px; }
+  .refresh-label { display: none; }
   .card { padding: 16px; }
   .bars { gap: 1px; }
   .heat { grid-template-columns: 28px repeat(24, minmax(0, 1fr)); gap: 1px; font-size: 10px; }
@@ -161,18 +166,15 @@ footer { margin-top: 24px; color: var(--text-3); font-size: 13px; text-align: ce
   <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v12m-5-5 5 5 5-5M5 20h14"/></symbol>
   <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 20V8m-5 5 5-5 5 5M5 4h14"/></symbol>
   <symbol id="i-activity" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></symbol>
-  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></symbol>
 </svg>
 <main>
-  <div class="brand">
-    <span class="brand-name">Is It Down?</span>
-    <button class="refresh" id="refresh" type="button" aria-label="Refresh status">
-      <svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg>Refresh
-    </button>
-  </div>
-
   <section class="answer" aria-live="polite">
-    <h1>Is the IIIT Hyderabad LAN down?</h1>
+    <div class="answer-head">
+      <h1>Is the IIIT Hyderabad LAN down?</h1>
+      <button class="refresh" id="refresh" type="button" aria-label="Refresh status">
+        <svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg><span class="refresh-label">Refresh</span>
+      </button>
+    </div>
     <div class="answer-word" id="answer-word">…</div>
     <p class="answer-detail" id="answer-detail">Checking the latest report from the monitor.</p>
     <p class="answer-meta" id="answer-meta">Checked every minute from a Raspberry Pi in Bakul Nivas.</p>
@@ -196,11 +198,6 @@ footer { margin-top: 24px; color: var(--text-3); font-size: 13px; text-align: ce
       <div class="tile-value" id="t-ping">–</div>
       <svg class="spark" id="s-ping" aria-hidden="true"></svg>
       <div class="spark-caption">Last 24 hours</div>
-    </div>
-    <div class="tile">
-      <div class="tile-label"><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg>Uptime</div>
-      <div class="tile-value" id="t-uptime">–</div>
-      <div class="spark-caption" id="t-uptime-caption">Last 30 days</div>
     </div>
   </section>
   <p class="note" id="speed-note"></p>
@@ -250,6 +247,6 @@ footer { margin-top: 24px; color: var(--text-3); font-size: 13px; text-align: ce
   </footer>
 </main>
 <div class="tooltip" id="tooltip" role="tooltip"></div>
-<script src="app.js?v=9" defer></script>
+<script src="app.js?v=10" defer></script>
 </body>
 </html>
