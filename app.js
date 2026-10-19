@@ -226,10 +226,6 @@ function renderHeat() {
   $('heat').innerHTML = html.join('');
   $('ramp').innerHTML = [0, 0.25, 0.5, 0.75, 1].map(f =>
     `<i style="background:${f ? `color-mix(in oklab, var(--s1) ${Math.round(30 + 70 * f)}%, var(--cell-zero))` : 'var(--cell-zero)'}"></i>`).join('');
-  const weeks = (now - s.monitoring_since) / (7 * 86400);
-  $('heat-sub').textContent = weeks < 2
-    ? 'Share of each hour of the week the LAN was down (IST). Patterns show up after a few weeks of data.'
-    : 'Share of each hour of the week the LAN was down, across all history (IST).';
 }
 
 // ---------- outage table ----------
