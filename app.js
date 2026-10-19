@@ -109,9 +109,8 @@ function renderTiles() {
   $('t-uptime').innerHTML = u != null ? `${fmtPct(u)}<small>%</small>` : '–';
   const days = Math.ceil((nowSec() - s.monitoring_since) / 86400);
   $('t-uptime-caption').textContent = days < 30 ? `Since ${fmtDay(s.monitoring_since)}` : 'Last 30 days';
-  $('speed-note').textContent = 'Measured from a Raspberry Pi in Bakul Nivas. ' + (sp
-    ? `Speed tested every 3 hours, last ${ago(sp.ts)} via ${sp.server}. Ping is to 1.1.1.1, checked every minute.`
-    : 'Speed is tested every 3 hours; no result yet.');
+  $('speed-note').textContent = 'Measured from a Raspberry Pi in Bakul Nivas.' +
+    (sp ? ` Speed last tested ${ago(sp.ts)}.` : '');
 
   const recent = state.speed.recent;
   sparkline($('s-down'), recent.map(r => [r.ts, r.down]), v => `${v.toFixed(1)} Mbps`);
