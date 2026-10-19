@@ -48,7 +48,7 @@
 :root {
   --bg: #f6f6f4; --surface: #fcfcfb; --border: #e4e3df;
   --text: #0b0b0b; --text-2: #52514e; --text-3: #6f6e69; --grid: #ecebe7;
-  --good: #0ca30c; --good-text: #006300; --warn: #fab219; --bad: #d03b3b; --none: #d9d8d3;
+  --good: #0ca30c; --good-text: #006300; --bad: #d03b3b; --none: #d9d8d3;
   --s1: #2a78d6; --cell-zero: #ecebe7;
 }
 @media (prefers-color-scheme: dark) {
@@ -112,12 +112,12 @@ a { color: var(--s1); }
 .uptime-stats b { color: var(--text); font-weight: 600; }
 .bars { display: flex; gap: 2px; height: 36px; }
 .bar { flex: 1; max-width: 28px; border-radius: 2px; background: var(--none); min-width: 0; }
-.bar.good { background: var(--good); } .bar.warn { background: var(--warn); } .bar.bad { background: var(--bad); }
+.bar.good { background: var(--good); } .bar.bad { background: var(--bad); }
 .bar:hover { opacity: .75; }
 .bars-axis { display: flex; justify-content: space-between; color: var(--text-3); font-size: 12px; margin-top: 6px; }
 .legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; color: var(--text-2); font-size: 13px; margin-top: 10px; }
 .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
-.sw.good { background: var(--good); } .sw.warn { background: var(--warn); } .sw.bad { background: var(--bad); } .sw.none { background: var(--none); }
+.sw.good { background: var(--good); } .sw.bad { background: var(--bad); } .sw.none { background: var(--none); }
 
 .heat { display: grid; grid-template-columns: 34px repeat(24, minmax(0, 1fr)); gap: 2px; font-size: 11px; color: var(--text-3); }
 .heat .cell { aspect-ratio: 1; border-radius: 2px; background: var(--cell-zero); }
@@ -214,8 +214,7 @@ footer { margin-top: 24px; color: var(--text-3); font-size: 13px; text-align: ce
     <div class="bars-axis" id="bars-axis"></div>
     <div class="legend">
       <span><i class="sw good"></i>No downtime</span>
-      <span><i class="sw warn"></i>Under 1 hour down</span>
-      <span><i class="sw bad"></i>1 hour or more down</span>
+      <span><i class="sw bad"></i>Some downtime</span>
       <span><i class="sw none"></i>No data</span>
     </div>
   </section>
@@ -251,6 +250,6 @@ footer { margin-top: 24px; color: var(--text-3); font-size: 13px; text-align: ce
   </footer>
 </main>
 <div class="tooltip" id="tooltip" role="tooltip"></div>
-<script src="app.js?v=8" defer></script>
+<script src="app.js?v=9" defer></script>
 </body>
 </html>

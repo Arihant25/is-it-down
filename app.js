@@ -173,7 +173,7 @@ function renderBars() {
     if (known <= 0) {
       tip = `<b>${fmtDay(d0)}</b><br>No data (monitor offline)`;
     } else {
-      cls = down === 0 ? 'good' : down < 3600 ? 'warn' : 'bad';
+      cls = down === 0 ? 'good' : 'bad';
       tip = `<b>${fmtDay(d0)}</b><br>` + (down ? `${icon('x')}Down for ${fmtDur(down)}` : `${icon('check')}No downtime`) +
         `<br>${fmtPct(100 * (known - down) / known)}% uptime` + (off >= 60 ? `<br>Monitor offline ${fmtDur(off)}` : '');
     }
