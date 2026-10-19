@@ -259,8 +259,13 @@ def build_payload(con):
     latest_speed = con.execute(
         "SELECT ts, down_mbps, up_mbps, ping_ms, server FROM speeds ORDER BY ts DESC LIMIT 1").fetchone()
 
+    ping_24h = [[t, round(ms, 1)] for t, ms in con.execute(
+        """SELECT (ts / 900) * 900, AVG(latency_ms) FROM probes
+           WHERE ts > ? AND latency_ms IS NOT NULL GROUP BY 1 ORDER BY 1""", (now - 86400,))]
+
     status = {
         "updated": now,
+        "ping_24h": ping_24h,
         "last_probe": last[0] if last else None,
         "up": up,
         "since": since,
