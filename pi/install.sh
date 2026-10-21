@@ -30,12 +30,21 @@ nmcli -t -f NAME,TYPE con show | while IFS= read -r line; do
 done || true
 /usr/sbin/iw dev wlan0 set power_save off || true
 
+# Time: prefer the campus NTP server. The Pi has no battery-backed clock, and the agent
+# repairs the clock itself if NTP gets stuck, so its units must not wait for time-sync.target.
+install -d /etc/systemd/timesyncd.conf.d
+cat > /etc/systemd/timesyncd.conf.d/bakul-lan.conf <<EOF
+[Time]
+NTP=time.iiit.ac.in
+FallbackNTP=time.google.com 0.debian.pool.ntp.org 1.debian.pool.ntp.org
+EOF
+systemctl restart systemd-timesyncd
+systemctl disable systemd-time-wait-sync.service 2>/dev/null || true
+
 unit() { # name, calendar, timeout, randomized delay
   cat > "/etc/systemd/system/bakul-lan-$1.service" <<EOF
 [Unit]
 Description=Is It Down? $1
-Wants=network-online.target time-sync.target
-After=network-online.target time-sync.target
 
 [Service]
 Type=oneshot
@@ -58,13 +67,12 @@ Persistent=false
 WantedBy=timers.target
 EOF
 }
-unit probe   '*:*:00'          55
+unit probe   '*:*:00'          110  # a run that overlaps the next minute just skips it
 unit speed   '00/3:00:00'      240  2h55min  # random time in each 3-hour window
 unit publish '*:0/5:30'        120
 unit prune   '*-*-* 04:10:00'  600
 
 systemctl daemon-reload
-systemctl enable systemd-time-wait-sync.service 2>/dev/null || true
 systemctl enable --now bakul-lan-probe.timer bakul-lan-speed.timer bakul-lan-publish.timer bakul-lan-prune.timer
 echo "Installed. Deploy key:"
 cat "$STATE/deploy_key.pub"

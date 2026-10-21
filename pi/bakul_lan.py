@@ -103,10 +103,88 @@ def check_connectivity():
     return up, latency, loss
 
 
+# ---------- clock ----------
+# The Pi has no battery-backed clock. Timestamps are only recorded once the clock is
+# trustworthy, but a stuck NTP sync must never silence the monitor, so after a few
+# minutes the clock is repaired from an HTTPS Date header instead.
+
+CLOCK_GRACE = 180          # seconds after boot to leave NTP alone
+TIMESYNC_RESTART_EVERY = 300
+TIME_URLS = ["https://www.google.com", "https://www.cloudflare.com", "https://github.com"]
+
+
+def boot_id():
+    with open("/proc/sys/kernel/random/boot_id") as f:
+        return f.read().strip()
+
+
+def uptime_s():
+    with open("/proc/uptime") as f:
+        return float(f.read().split()[0])
+
+
+def ntp_synced():
+    r = run(["timedatectl", "show", "-p", "NTPSynchronized", "--value"])
+    return r is not None and r.stdout.strip() == "yes"
+
+
+def clock_trusted(con):
+    return ntp_synced() or meta_get(con, "clock_ok_boot") == boot_id()
+
+
+def http_time():
+    for url in TIME_URLS:
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, method="HEAD"), timeout=8) as resp:
+                date = resp.headers.get("Date")
+            if date:
+                return int(time.mktime(time.strptime(date, "%a, %d %b %Y %H:%M:%S GMT")) - time.timezone)
+        except Exception:
+            continue
+    return None
+
+
+def ensure_clock(con):
+    """Return True once timestamps can be trusted, repairing the clock if NTP is stuck."""
+    if clock_trusted(con):
+        return True
+    if uptime_s() < CLOCK_GRACE:
+        log("clock not synced yet; waiting for NTP")
+        return False
+    if time.time() - float(meta_get(con, "timesync_restart", 0)) > TIMESYNC_RESTART_EVERY:
+        log("clock still not synced; restarting systemd-timesyncd")
+        run(["systemctl", "restart", "systemd-timesyncd"])
+        with con:
+            meta_set(con, "timesync_restart", time.time())
+        time.sleep(10)
+        if ntp_synced():
+            return True
+    t = http_time()
+    if t is None:
+        log("clock not synced and no HTTPS time source reachable; skipping")
+        return False
+    off = t - time.time()
+    run(["date", "-u", "-s", f"@{t}"])
+    with con:
+        meta_set(con, "clock_ok_boot", boot_id())
+        meta_set(con, "timesync_restart", time.time())
+    log(f"clock set from HTTPS Date header (was off by {off:+.0f} s)")
+    return True
+
+
 def cmd_probe():
+    con = db()
+    if ensure_clock(con):
+        record_probe(con)
+    try:
+        hotspot_watchdog(con)
+    except Exception as e:  # never let the watchdog break probing
+        log(f"hotspot watchdog error: {e}")
+
+
+def record_probe(con):
     now = int(time.time())
     up, latency, loss = check_connectivity()
-    con = db()
     with con:
         last = con.execute("SELECT ts, up FROM probes ORDER BY ts DESC LIMIT 1").fetchone()
         open_outage = con.execute(
@@ -123,10 +201,6 @@ def cmd_probe():
 
         con.execute("INSERT OR REPLACE INTO probes VALUES (?,?,?,?)", (now, int(up), latency, loss))
     log(f"probe up={up} latency={latency} loss={loss}")
-    try:
-        hotspot_watchdog(con)
-    except Exception as e:  # never let the watchdog break probing
-        log(f"hotspot watchdog error: {e}")
 
 
 # ---------- hotspot watchdog ----------
@@ -202,6 +276,9 @@ def hotspot_watchdog(con):
 
 def cmd_speed():
     con = db()
+    if not clock_trusted(con):
+        log("clock not trusted yet, skipping speedtest")
+        return
     last = con.execute("SELECT up FROM probes ORDER BY ts DESC LIMIT 1").fetchone()
     if last and not last[0]:
         log("network down, skipping speedtest")
@@ -303,6 +380,9 @@ def git(*args, check=True):
 
 def cmd_publish():
     con = db()
+    if not clock_trusted(con):
+        log("clock not trusted yet, skipping publish")
+        return
     status, outages, speed = build_payload(con)
     subprocess.run(["rm", "-rf", WORK_DIR], check=True)
     os.makedirs(WORK_DIR)
