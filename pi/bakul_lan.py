@@ -172,8 +172,50 @@ def ensure_clock(con):
     return True
 
 
+# ---------- wired LAN watchdog ----------
+# The campus LAN uses 802.1X. If authentication times out a few times (e.g. while the
+# link flaps after a power cut), NetworkManager gives up with "no-secrets" and never
+# retries on its own, leaving the Pi offline until a reboot.
+
+LAN_RESTART_COOLDOWN = 120
+
+
+def lan_connection():
+    """Name of the autoconnecting wired connection for eth0, if any."""
+    r = run(["nmcli", "-t", "-f", "NAME,TYPE", "con", "show"])
+    for line in (r.stdout.splitlines() if r else []):
+        name, _, typ = line.rpartition(":")
+        name = name.replace("\\:", ":")
+        if typ != "802-3-ethernet":
+            continue
+        auto = run(["nmcli", "-g", "connection.autoconnect", "con", "show", name])
+        iface = run(["nmcli", "-g", "connection.interface-name", "con", "show", name])
+        if auto and auto.stdout.strip() == "yes" and iface and iface.stdout.strip() in ("", "eth0"):
+            return name
+    return None
+
+
+def lan_watchdog(con):
+    name = lan_connection()
+    if not name:
+        return
+    r = run(["nmcli", "-t", "-f", "GENERAL.STATE", "con", "show", name])
+    if r is not None and "activated" in r.stdout:
+        return
+    if time.time() - float(meta_get(con, "lan_restart", 0)) < LAN_RESTART_COOLDOWN:
+        return
+    log("wired LAN connection is not active; asking NetworkManager to reconnect")
+    run(["nmcli", "-w", "0", "con", "up", name])  # don't wait; activation continues in the background
+    with con:
+        meta_set(con, "lan_restart", time.time())
+
+
 def cmd_probe():
     con = db()
+    try:
+        lan_watchdog(con)  # first: without the LAN, the clock can't be fixed either
+    except Exception as e:  # never let the watchdog break probing
+        log(f"LAN watchdog error: {e}")
     if ensure_clock(con):
         record_probe(con)
     try:

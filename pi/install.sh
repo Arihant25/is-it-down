@@ -30,6 +30,14 @@ nmcli -t -f NAME,TYPE con show | while IFS= read -r line; do
 done || true
 /usr/sbin/iw dev wlan0 set power_save off || true
 
+# Wired LAN: give 802.1X authentication longer than the 25 s default before it counts as a
+# failure (the agent's LAN watchdog also reconnects if NetworkManager gives up).
+nmcli -t -f NAME,TYPE con show | while IFS= read -r line; do
+  name=${line%:*}
+  [ "${line##*:}" = 802-3-ethernet ] && [ -n "$(nmcli -g 802-1x.eap con show "$name")" ] &&
+    nmcli con modify "$name" 802-1x.auth-timeout 60
+done || true
+
 # Time: prefer the campus NTP server. The Pi has no battery-backed clock, and the agent
 # repairs the clock itself if NTP gets stuck, so its units must not wait for time-sync.target.
 install -d /etc/systemd/timesyncd.conf.d
