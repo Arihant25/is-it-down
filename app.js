@@ -49,8 +49,7 @@ async function load(manual = false) {
   } catch (e) {
     console.error(e);
     if (!state.status) {
-      document.body.className = 'loading';
-      $('answer-word').textContent = '…';
+      document.body.className = 'loading error';
       $('answer-detail').textContent = 'Could not load the monitor’s data. Try refreshing in a minute.';
       return;
     }
@@ -63,6 +62,7 @@ async function load(manual = false) {
 function render() {
   renderAnswer();
   renderTiles();
+  renderHourly();
   renderBars();
   renderHeat();
   renderTable();
@@ -150,6 +150,93 @@ function sparkline(svg, pts, fmtVal) {
   };
   svg.onpointerdown = svg.onpointermove; // a tap shows the tooltip on touch screens
   svg.onpointerleave = () => { place(pts[pts.length - 1]); hideTip(); };
+}
+
+// ---------- average speed by hour of day ----------
+const hh = h => String(h).padStart(2, '0');
+
+// The Pi publishes all-time hourly averages; fall back to the last 7 days of raw tests.
+function hourlyStats() {
+  if (state.speed.hourly) return state.speed.hourly;
+  const acc = {};
+  for (const r of state.speed.recent) {
+    const h = Math.floor((r.ts + IST_OFFSET) % 86400 / 3600);
+    const a = acc[h] ||= { hour: h, down: 0, up: 0, n: 0 };
+    a.down += r.down; a.up += r.up; a.n++;
+  }
+  return Object.values(acc).map(a => ({ hour: a.hour, down: a.down / a.n, up: a.up / a.n, n: a.n }));
+}
+
+// A bar with rounded top corners, anchored to the baseline.
+function barPath(x, y, w, h) {
+  const r = Math.min(3, w / 2, h);
+  return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
+}
+
+function renderHourly() {
+  const box = $('hourly');
+  box.replaceChildren();
+  const W = box.clientWidth, H = box.clientHeight;
+  if (!W) return;
+  const byHour = new Array(24).fill(null);
+  for (const r of hourlyStats()) byHour[r.hour] = r;
+  const m = { t: 8, r: 4, b: 22, l: 34 };
+  const svg = el('svg', { viewBox: `0 0 ${W} ${H}` }, box);
+  const filled = byHour.filter(Boolean);
+  const yMax = niceMax(Math.max(10, ...filled.map(r => Math.max(r.down, r.up))) * 1.05);
+  const Y = v => H - m.b - v / yMax * (H - m.t - m.b);
+  const slot = (W - m.l - m.r) / 24;
+  const grid = el('g', { class: 'grid' }, svg), axis = el('g', { class: 'axis' }, svg);
+  for (let i = 0; i <= 4; i++) {
+    const v = yMax * i / 4;
+    el('line', { x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v) }, grid);
+    el('text', { x: m.l - 6, y: Y(v) + 4, 'text-anchor': 'end' }, axis).textContent = +v.toFixed(1);
+  }
+  const every = W < 500 ? 6 : 3;
+  for (let h = 0; h < 24; h += every)
+    el('text', { x: m.l + h * slot, y: H - 6 }, axis).textContent = hh(h);
+
+  const gap = 2, bw = Math.max(2, (slot - 4 - gap) / 2);
+  const hovers = [];
+  for (let h = 0; h < 24; h++) {
+    const x0 = m.l + h * slot, r = byHour[h];
+    hovers.push(el('rect', { class: 'hover', x: x0, y: m.t, width: slot, height: H - m.t - m.b, rx: 3 }, svg));
+    if (!r) {
+      el('line', { class: 'empty-mark', x1: x0 + 3, x2: x0 + slot - 3, y1: H - m.b, y2: H - m.b }, svg);
+      continue;
+    }
+    const bx = x0 + 2;
+    el('path', { d: barPath(bx, Y(r.down), bw, H - m.b - Y(r.down)), fill: 'var(--s1)' }, svg);
+    el('path', { d: barPath(bx + bw + gap, Y(r.up), bw, H - m.b - Y(r.up)), fill: 'var(--s2)' }, svg);
+  }
+  const hit = el('rect', { x: m.l, y: m.t, width: W - m.l - m.r, height: H - m.t - m.b, fill: 'transparent' }, svg);
+  const move = ev => {
+    const rc = svg.getBoundingClientRect();
+    const h = Math.min(23, Math.max(0, Math.floor((ev.clientX - rc.left - m.l) / slot)));
+    hovers.forEach((e, i) => e.classList.toggle('on', i === h));
+    const r = byHour[h];
+    showTip(ev, `<b>${hh(h)}:00–${hh((h + 1) % 24)}:00</b><br>` + (r
+      ? `Download ${r.down.toFixed(1)} Mbps<br>Upload ${r.up.toFixed(1)} Mbps<br>${r.n} test${r.n === 1 ? '' : 's'}`
+      : 'No tests in this hour yet'));
+  };
+  hit.addEventListener('pointermove', move);
+  hit.addEventListener('pointerdown', move);
+  hit.addEventListener('pointerleave', () => { hovers.forEach(e => e.classList.remove('on')); hideTip(); });
+
+  // Name the fastest and slowest hours once enough of the day is covered.
+  const solid = filled.filter(r => r.n >= 2);
+  if (solid.length >= 12) {
+    const best = solid.reduce((a, b) => b.down > a.down ? b : a), worst = solid.reduce((a, b) => b.down < a.down ? b : a);
+    $('hourly-summary').textContent = `Fastest around ${hh(best.hour)}:00 (${best.down.toFixed(0)} Mbps download), ` +
+      `slowest around ${hh(worst.hour)}:00 (${worst.down.toFixed(0)} Mbps).`;
+  } else {
+    $('hourly-summary').textContent = `${filled.length} of 24 hours have speed tests so far.`;
+  }
+}
+
+function niceMax(v) {
+  const p = 10 ** Math.floor(Math.log10(v)), n = v / p;
+  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * p;
 }
 
 // ---------- daily uptime bars (grow from the first monitored day) ----------
@@ -264,9 +351,9 @@ $('show-offline').addEventListener('change', () => state.status && renderTable()
 let rt;
 // Tapping anywhere else dismisses a tooltip opened by touch.
 document.addEventListener('pointerdown', ev => {
-  if (!ev.target.closest('[data-tip], .spark')) hideTip();
+  if (!ev.target.closest('[data-tip], .spark, .hourly')) hideTip();
 });
-addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => state.status && renderTiles(), 150); });
+addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (state.status) { renderTiles(); renderHourly(); } }, 150); });
 
 // Poll once a minute while the tab is visible; keep the "for X min" text ticking in between.
 let timer = null;

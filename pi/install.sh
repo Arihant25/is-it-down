@@ -30,7 +30,7 @@ nmcli -t -f NAME,TYPE con show | while IFS= read -r line; do
 done || true
 /usr/sbin/iw dev wlan0 set power_save off || true
 
-unit() { # name, calendar, timeout
+unit() { # name, calendar, timeout, randomized delay
   cat > "/etc/systemd/system/bakul-lan-$1.service" <<EOF
 [Unit]
 Description=Is It Down? $1
@@ -51,6 +51,7 @@ Description=Is It Down? $1 timer
 [Timer]
 OnCalendar=$2
 AccuracySec=1s
+RandomizedDelaySec=${4:-0}
 Persistent=false
 
 [Install]
@@ -58,7 +59,7 @@ WantedBy=timers.target
 EOF
 }
 unit probe   '*:*:00'          55
-unit speed   '00/3:05:10'      240
+unit speed   '00/3:00:00'      240  2h55min  # random time in each 3-hour window
 unit publish '*:0/5:30'        120
 unit prune   '*-*-* 04:10:00'  600
 

@@ -3,7 +3,7 @@
 
 Subcommands (each run by its own systemd timer):
   probe    every minute: check connectivity, record state, watch the hotspot
-  speed    every 3 hours: run an Ookla speedtest
+  speed    every 3 hours, at a random time in the window: run an Ookla speedtest
   publish  every 5 min:  build JSON and force-push it as a single commit to the `data` branch
   prune    daily:        drop old raw probes
 """
@@ -285,7 +285,10 @@ def build_payload(con):
     daily = [dict(day=day, down=round(d, 1), up=round(u, 1), down_min=round(dmin, 1), n=n) for day, d, u, dmin, n in
              con.execute("""SELECT date(ts, 'unixepoch', 'localtime') AS day, AVG(down_mbps), AVG(up_mbps),
                             MIN(down_mbps), COUNT(*) FROM speeds GROUP BY day ORDER BY day""")]
-    return status, outages, {"recent": raw, "daily": daily}
+    hourly = [dict(hour=h, down=round(d, 1), up=round(u, 1), n=n) for h, d, u, n in
+              con.execute("""SELECT CAST(strftime('%H', ts, 'unixepoch', 'localtime') AS INTEGER) AS h,
+                             AVG(down_mbps), AVG(up_mbps), COUNT(*) FROM speeds GROUP BY h ORDER BY h""")]
+    return status, outages, {"recent": raw, "daily": daily, "hourly": hourly}
 
 
 def git(*args, check=True):
