@@ -1,5 +1,15 @@
-const DATA = 'https://raw.githubusercontent.com/Arihant25/is-it-down/data/';
-const STALE_AFTER = 20 * 60; // monitor publishes every 5 min; raw.githubusercontent caches up to 5 more
+const RAW = 'https://raw.githubusercontent.com/Arihant25/is-it-down/';
+const NETS = {
+  lan: {
+    label: 'LAN', subject: 'The LAN', the: 'the LAN', base: `${RAW}data/`,
+    where: 'Measured from a Raspberry Pi in Bakul Nivas.', off: 'The monitor may also have lost power.',
+  },
+  wifi: {
+    label: 'Wi-Fi', subject: 'Wi-Fi', the: 'Wi-Fi', base: `${RAW}data-wifi/`,
+    where: 'Measured from a test machine on wifi@iiith.', off: 'The test machine may also be switched off.',
+  },
+};
+const STALE_AFTER = 20 * 60; // monitors publish every 5 min; raw.githubusercontent caches up to 5 more
 const TZ = 'Asia/Kolkata';
 const IST_OFFSET = 19800;
 const MAX_DAYS = 90;
@@ -7,7 +17,14 @@ const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 const $ = id => document.getElementById(id);
 const nowSec = () => Math.floor(Date.now() / 1000);
-let state = { status: null, outages: [], speed: { recent: [], daily: [] } };
+const state = { lan: null, wifi: null, net: initialNet() };
+const cur = () => state[state.net];
+
+function initialNet() {
+  if (location.hash === '#wifi') return 'wifi';
+  try { if (localStorage.getItem('net') === 'wifi') return 'wifi'; } catch {}
+  return 'lan';
+}
 
 const fmt = opts => ts => new Intl.DateTimeFormat('en-IN', { timeZone: TZ, hour12: false, ...opts }).format(ts * 1000);
 const fmtTime = fmt({ day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
@@ -29,8 +46,8 @@ const icon = name => `<svg class="icon" aria-hidden="true"><use href="#i-${name}
 const fmtPct = p => p >= 99.995 ? '100' : p.toFixed(2);
 const istDayStart = ts => Math.floor((ts + IST_OFFSET) / 86400) * 86400 - IST_OFFSET;
 
-async function getJSON(name, bust) {
-  const r = await fetch(`${DATA}${name}?t=${bust}`, { cache: 'no-store' });
+async function getJSON(base, name, bust) {
+  const r = await fetch(`${base}${name}?t=${bust}`, { cache: 'no-store' });
   if (!r.ok) throw new Error(`${name}: ${r.status}`);
   return r.json();
 }
@@ -38,77 +55,105 @@ async function getJSON(name, bust) {
 async function load(manual = false) {
   const btn = $('refresh');
   btn.classList.add('busy');
-  try {
-    // The first load reuses the fetch index.html started in <head>.
-    const early = window.__data;
-    window.__data = null;
-    const bust = manual ? Date.now() : Math.floor(Date.now() / 30000);
-    const [status, outages, speed] = await (early ||
-      Promise.all(['status.json', 'outages.json', 'speed.json'].map(n => getJSON(n, bust))));
-    state = { status, outages, speed };
-  } catch (e) {
-    console.error(e);
-    if (!state.status) {
-      document.body.className = 'loading error';
-      $('answer-detail').textContent = 'Could not load the monitor’s data. Try refreshing in a minute.';
-      return;
+  // The first load reuses the fetches index.html started in <head>.
+  const early = window.__data;
+  window.__data = null;
+  const bust = manual ? Date.now() : Math.floor(Date.now() / 30000);
+  await Promise.all(Object.keys(NETS).map(async net => {
+    try {
+      const [status, outages, speed] = await ((early && early[net]) ||
+        Promise.all(['status.json', 'outages.json', 'speed.json'].map(n => getJSON(NETS[net].base, n, bust))));
+      state[net] = { status, outages, speed };
+    } catch (e) {
+      console.error(net, e); // keep the last good data for this network, if any
     }
-  } finally {
-    btn.classList.remove('busy');
-  }
+  }));
+  btn.classList.remove('busy');
   render();
 }
 
 function render() {
-  renderAnswer();
+  for (const net of Object.keys(NETS)) renderAnswer(net);
+  renderTitle();
+  renderDetails();
+}
+
+const isStale = d => nowSec() - d.status.updated > STALE_AFTER;
+const stateOf = d => !d ? 'loading' : isStale(d) ? 'stale' : d.status.up ? 'up' : 'down';
+
+// ---------- the two answers ----------
+function renderAnswer(net) {
+  const n = NETS[net], d = state[net], box = $(`a-${net}`), now = nowSec();
+  const q = sel => box.querySelector(sel);
+  if (!d) {
+    box.className = 'net loading error';
+    q('.answer-detail').textContent = `Could not load the ${n.label} monitor’s data. Try refreshing in a minute.`;
+    q('.answer-meta').textContent = '';
+    return;
+  }
+  const s = d.status, sp = s.speed, cls = stateOf(d);
+  let word, detail, meta;
+  if (cls === 'stale') {
+    word = 'Probably.';
+    detail = `No report from the ${n.label} monitor for ${fmtDur(now - s.updated)}, so it’s most likely down. ${n.off}`;
+    meta = `Last report at ${fmtTime(s.updated)}`;
+  } else if (cls === 'up') {
+    word = 'No.';
+    const parts = [sp && `${sp.down.toFixed(1)} Mbps download speed`, sp && `${sp.up.toFixed(1)} upload speed`,
+      s.latency_ms != null && `${Math.round(s.latency_ms)} ms ping`].filter(Boolean);
+    detail = `${n.subject} is up${parts.length ? `: ${parts.join(', ')}` : ''}.`;
+    meta = `Up for ${fmtDur(now - s.since)} · checked ${ago(s.last_probe)}`;
+  } else {
+    word = 'Yes.';
+    detail = `${n.subject} has been down for ${fmtDur(now - s.since)}, since ${fmtClock(s.since)}.`;
+    meta = `Checked ${ago(s.last_probe)}`;
+  }
+  box.className = `net ${cls}`;
+  q('.answer-word').textContent = word;
+  q('.answer-detail').textContent = detail;
+  q('.answer-meta').textContent = meta;
+}
+
+function renderTitle() {
+  const word = { up: 'up', down: 'down', stale: 'probably down', loading: '…' };
+  document.title = `LAN ${word[stateOf(state.lan)]} · Wi-Fi ${word[stateOf(state.wifi)]} · Is It Down? IIIT Hyderabad`;
+}
+
+// ---------- network switch and the sections below it ----------
+function setNet(net) {
+  state.net = net;
+  try { localStorage.setItem('net', net); } catch {}
+  history.replaceState(null, '', net === 'wifi' ? '#wifi' : location.pathname + location.search);
+  renderDetails();
+}
+
+function renderDetails() {
+  for (const b of document.querySelectorAll('.switch button')) b.setAttribute('aria-selected', b.dataset.net === state.net);
+  const d = cur(), n = NETS[state.net];
+  $('details').className = stateOf(d);
+  $('hourly-sub').textContent = `Average ${n.label} speed for each hour of the day (IST), across all speed tests.`;
+  $('heat-sub').textContent = `Share of each hour of the week ${n.the} was down, across all history (IST).`;
+  if (!d) {
+    $('speed-note').textContent = `No data from the ${NETS[state.net].label} monitor yet.`;
+    return;
+  }
   renderTiles();
   renderHourly();
   renderBars();
   renderHeat();
   renderTable();
-  const s = state.status;
-  $('footer-updated').textContent = `Monitoring since ${fmtFull(s.monitoring_since)}`;
-}
-
-// ---------- the answer ----------
-function renderAnswer() {
-  const s = state.status, now = nowSec();
-  const stale = now - s.updated > STALE_AFTER;
-  const sp = s.speed;
-  let cls, word, detail, meta;
-  if (stale) {
-    cls = 'stale'; word = 'Probably.';
-    detail = `No report from the monitor for ${fmtDur(now - s.updated)}, so the LAN is most likely down. ` +
-      'The monitor may also have lost power.';
-    meta = `Last report at ${fmtTime(s.updated)}`;
-  } else if (s.up) {
-    cls = 'up'; word = 'No.';
-    const parts = [sp && `${sp.down.toFixed(1)} Mbps download speed`, sp && `${sp.up.toFixed(1)} upload speed`,
-      s.latency_ms != null && `${Math.round(s.latency_ms)} ms ping`].filter(Boolean);
-    detail = `The LAN is up${parts.length ? `: ${parts.join(', ')}` : ''}.`;
-    meta = `Up for ${fmtDur(now - s.since)} · checked ${ago(s.last_probe)}`;
-  } else {
-    cls = 'down'; word = 'Yes.';
-    detail = `The LAN has been down for ${fmtDur(now - s.since)}, since ${fmtClock(s.since)}.`;
-    meta = `Checked ${ago(s.last_probe)}`;
-  }
-  document.body.className = cls;
-  $('answer-word').textContent = word;
-  $('answer-detail').textContent = detail;
-  $('answer-meta').textContent = meta;
-  document.title = `${stale ? 'Probably down' : s.up ? 'Up' : 'Down'} · Is It Down? IIIT Hyderabad LAN`;
+  $('footer-updated').textContent = `${NETS[state.net].label} monitoring since ${fmtFull(d.status.monitoring_since)}`;
 }
 
 // ---------- tiles with sparklines ----------
 function renderTiles() {
-  const s = state.status, sp = s.speed;
+  const d = cur(), s = d.status, sp = s.speed;
   $('t-down').innerHTML = sp ? `${sp.down.toFixed(1)}<small>Mbps</small>` : '–';
   $('t-up').innerHTML = sp ? `${sp.up.toFixed(1)}<small>Mbps</small>` : '–';
   $('t-ping').innerHTML = s.latency_ms != null ? `${Math.round(s.latency_ms)}<small>ms</small>` : '–';
-  $('speed-note').textContent = 'Measured from a Raspberry Pi in Bakul Nivas.' +
-    (sp ? ` Speed last tested ${ago(sp.ts)}.` : '');
+  $('speed-note').textContent = NETS[state.net].where + (sp ? ` Speed last tested ${ago(sp.ts)}.` : '');
 
-  const recent = state.speed.recent;
+  const recent = d.speed.recent;
   sparkline($('s-down'), recent.map(r => [r.ts, r.down]), v => `${v.toFixed(1)} Mbps`);
   sparkline($('s-up'), recent.map(r => [r.ts, r.up]), v => `${v.toFixed(1)} Mbps`);
   sparkline($('s-ping'), s.ping_24h || [], v => `${Math.round(v)} ms`);
@@ -155,11 +200,12 @@ function sparkline(svg, pts, fmtVal) {
 // ---------- average speed by hour of day ----------
 const hh = h => String(h).padStart(2, '0');
 
-// The Pi publishes all-time hourly averages; fall back to the last 7 days of raw tests.
+// The monitors publish all-time hourly averages; fall back to the last 7 days of raw tests.
 function hourlyStats() {
-  if (state.speed.hourly) return state.speed.hourly;
+  const sp = cur().speed;
+  if (sp.hourly) return sp.hourly;
   const acc = {};
-  for (const r of state.speed.recent) {
+  for (const r of sp.recent) {
     const h = Math.floor((r.ts + IST_OFFSET) % 86400 / 3600);
     const a = acc[h] ||= { hour: h, down: 0, up: 0, n: 0 };
     a.down += r.down; a.up += r.up; a.n++;
@@ -241,14 +287,14 @@ function niceMax(v) {
 
 // ---------- daily uptime bars (grow from the first monitored day) ----------
 function renderBars() {
-  const s = state.status, now = nowSec();
+  const d = cur(), s = d.status, now = nowSec();
   const today = istDayStart(now);
   const first = Math.max(istDayStart(s.monitoring_since), today - (MAX_DAYS - 1) * 86400);
   const html = [];
   for (let d0 = first; d0 <= today; d0 += 86400) {
     const d1 = Math.min(d0 + 86400, now), w0 = Math.max(d0, s.monitoring_since);
     let down = 0, off = 0;
-    for (const o of state.outages) {
+    for (const o of d.outages) {
       const ov = overlap(o.start, o.end ?? now, w0, d1);
       if (o.kind === 'down') down += ov; else off += ov;
     }
@@ -281,10 +327,10 @@ function addSpan(arr, a, b) {
 }
 
 function renderHeat() {
-  const s = state.status, now = nowSec();
+  const d = cur(), s = d.status, now = nowSec();
   const known = new Array(168).fill(0), down = new Array(168).fill(0);
   addSpan(known, s.monitoring_since, now);
-  for (const o of state.outages) {
+  for (const o of d.outages) {
     const end = o.end ?? now;
     if (o.kind === 'down') addSpan(down, o.start, end);
     else { const off = new Array(168).fill(0); addSpan(off, o.start, end); off.forEach((v, i) => known[i] -= v); }
@@ -295,12 +341,12 @@ function renderHeat() {
     ? `color-mix(in oklab, var(--s1) ${Math.round(30 + 70 * f / maxFrac)}%, var(--cell-zero))` : '';
 
   const html = ['<span></span>'];
-  for (let h = 0; h < 24; h++) html.push(`<span class="hour">${h % 6 === 0 ? String(h).padStart(2, '0') : ''}</span>`);
-  for (let d = 0; d < 7; d++) {
-    html.push(`<span class="day">${DAY_NAMES[d]}</span>`);
+  for (let h = 0; h < 24; h++) html.push(`<span class="hour">${h % 6 === 0 ? hh(h) : ''}</span>`);
+  for (let day = 0; day < 7; day++) {
+    html.push(`<span class="day">${DAY_NAMES[day]}</span>`);
     for (let h = 0; h < 24; h++) {
-      const i = d * 24 + h, f = frac[i];
-      const range = `${DAY_NAMES[d]} ${String(h).padStart(2, '0')}:00–${String((h + 1) % 24).padStart(2, '0')}:00`;
+      const i = day * 24 + h, f = frac[i];
+      const range = `${DAY_NAMES[day]} ${hh(h)}:00–${hh((h + 1) % 24)}:00`;
       const tip = f == null ? `<b>${range}</b><br>No data yet`
         : `<b>${range}</b><br>${f ? `Down ${(100 * f).toFixed(1)}% of the time<br>${fmtDur(down[i])} in total` : 'Never down'}`;
       html.push(`<div class="cell${f == null ? ' nodata' : ''}" style="${f ? `background:${shade(f)}` : ''}" data-tip="${tip}"></div>`);
@@ -314,11 +360,11 @@ function renderHeat() {
 // ---------- outage table ----------
 function renderTable() {
   const showOff = $('show-offline').checked, now = nowSec();
-  const rows = state.outages.filter(o => showOff || o.kind === 'down').slice().reverse();
+  const rows = cur().outages.filter(o => showOff || o.kind === 'down').slice().reverse();
   $('outages').innerHTML = rows.length ? rows.map(o => {
     const ongoing = o.end == null;
     const cls = ongoing ? 'ongoing' : o.kind === 'offline' ? 'offline' : '';
-    const label = o.kind === 'offline' ? ' <span title="The monitor itself was offline (power cut or reboot)">· monitor offline</span>' : '';
+    const label = o.kind === 'offline' ? ' <span title="The monitor itself was offline">· monitor offline</span>' : '';
     return `<tr class="${cls}"><td>${fmtFull(o.start)}</td><td>${ongoing ? 'Ongoing' : fmtFull(o.end)}</td>` +
       `<td>${fmtDur((o.end ?? now) - o.start)}${label}</td></tr>`;
   }).join('') : '<tr><td class="empty" colspan="3">No outages recorded yet</td></tr>';
@@ -346,14 +392,15 @@ for (const id of ['bars', 'heat']) {
   $(id).addEventListener('pointerleave', hideTip);
 }
 
+for (const b of document.querySelectorAll('.switch button')) b.addEventListener('click', () => setNet(b.dataset.net));
 $('refresh').addEventListener('click', () => load(true));
-$('show-offline').addEventListener('change', () => state.status && renderTable());
-let rt;
+$('show-offline').addEventListener('change', () => cur() && renderTable());
 // Tapping anywhere else dismisses a tooltip opened by touch.
 document.addEventListener('pointerdown', ev => {
   if (!ev.target.closest('[data-tip], .spark, .hourly')) hideTip();
 });
-addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (state.status) { renderTiles(); renderHourly(); } }, 150); });
+let rt;
+addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (cur()) { renderTiles(); renderHourly(); } }, 150); });
 
 // Poll once a minute while the tab is visible; keep the "for X min" text ticking in between.
 let timer = null;
@@ -361,6 +408,11 @@ function startPolling() { clearInterval(timer); timer = setInterval(load, 60000)
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { clearInterval(timer); timer = null; } else { load(); startPolling(); }
 });
-setInterval(() => !document.hidden && state.status && renderAnswer(), 15000);
+setInterval(() => {
+  if (document.hidden) return;
+  for (const net of Object.keys(NETS)) if (state[net]) renderAnswer(net);
+  renderTitle();
+}, 15000);
+renderDetails(); // reflect the remembered network in the switch before data arrives
 load();
 startPolling();

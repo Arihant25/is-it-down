@@ -10,18 +10,23 @@ Subcommands (each run by its own systemd timer):
 import json
 import os
 import re
+import shutil
 import sqlite3
 import subprocess
 import sys
 import time
 import urllib.request
 
-STATE_DIR = "/var/lib/bakul-lan"
+# Defaults are for the root agent on the Pi (LAN). The Wi-Fi monitor runs the same script from
+# a normal user's crontab with BAKUL_MANAGED=0: no watchdogs and no clock repair there.
+MANAGED = os.environ.get("BAKUL_MANAGED", "1") == "1"
+NETWORK = os.environ.get("BAKUL_NETWORK", "lan")
+STATE_DIR = os.environ.get("BAKUL_STATE_DIR", "/var/lib/bakul-lan")
 DB_PATH = f"{STATE_DIR}/db.sqlite"
 DEPLOY_KEY = f"{STATE_DIR}/deploy_key"
-WORK_DIR = "/run/bakul-lan/publish"  # tmpfs: no git history ever touches the SD card
+WORK_DIR = os.environ.get("BAKUL_WORK_DIR", "/run/bakul-lan/publish")  # tmpfs: no git history on disk
 REPO = "git@github.com:Arihant25/is-it-down.git"
-BRANCH = "data"
+BRANCH = os.environ.get("BAKUL_BRANCH", "data")
 
 PING_TARGETS = ["1.1.1.1", "8.8.8.8"]
 HTTP_TARGET = "https://github.com"
@@ -129,6 +134,8 @@ def ntp_synced():
 
 
 def clock_trusted(con):
+    if not MANAGED:
+        return True  # an ordinary machine with a battery-backed clock keeps its own time
     return ntp_synced() or meta_get(con, "clock_ok_boot") == boot_id()
 
 
@@ -213,13 +220,15 @@ def lan_watchdog(con):
 def cmd_probe():
     con = db()
     try:
-        lan_watchdog(con)  # first: without the LAN, the clock can't be fixed either
+        if MANAGED:
+            lan_watchdog(con)  # first: without the LAN, the clock can't be fixed either
     except Exception as e:  # never let the watchdog break probing
         log(f"LAN watchdog error: {e}")
     if ensure_clock(con):
         record_probe(con)
     try:
-        hotspot_watchdog(con)
+        if MANAGED:
+            hotspot_watchdog(con)
     except Exception as e:  # never let the watchdog break probing
         log(f"hotspot watchdog error: {e}")
 
@@ -325,7 +334,8 @@ def cmd_speed():
     if last and not last[0]:
         log("network down, skipping speedtest")
         return
-    r = run(["speedtest", "--accept-license", "--accept-gdpr", "-f", "json"], timeout=180)
+    speedtest = shutil.which("speedtest") or os.path.expanduser("~/.local/bin/speedtest")
+    r = run([speedtest, "--accept-license", "--accept-gdpr", "-f", "json"], timeout=180)
     if r is None or r.returncode != 0:
         log(f"speedtest failed: {r.stderr if r else 'timeout'}")
         return
@@ -383,6 +393,7 @@ def build_payload(con):
            WHERE ts > ? AND latency_ms IS NOT NULL GROUP BY 1 ORDER BY 1""", (now - 86400,))]
 
     status = {
+        "network": NETWORK,
         "updated": now,
         "ping_24h": ping_24h,
         "last_probe": last[0] if last else None,
@@ -401,11 +412,12 @@ def build_payload(con):
     raw = [dict(ts=t, down=d, up=u, ping=p) for t, d, u, p in con.execute(
         "SELECT ts, down_mbps, up_mbps, ping_ms FROM speeds WHERE ts > ? ORDER BY ts",
         (now - RAW_SPEED_DAYS * 86400,))]
+    # Days and hours are in IST (+19800 s) whatever the machine's own time zone is.
     daily = [dict(day=day, down=round(d, 1), up=round(u, 1), down_min=round(dmin, 1), n=n) for day, d, u, dmin, n in
-             con.execute("""SELECT date(ts, 'unixepoch', 'localtime') AS day, AVG(down_mbps), AVG(up_mbps),
+             con.execute("""SELECT date(ts + 19800, 'unixepoch') AS day, AVG(down_mbps), AVG(up_mbps),
                             MIN(down_mbps), COUNT(*) FROM speeds GROUP BY day ORDER BY day""")]
     hourly = [dict(hour=h, down=round(d, 1), up=round(u, 1), n=n) for h, d, u, n in
-              con.execute("""SELECT CAST(strftime('%H', ts, 'unixepoch', 'localtime') AS INTEGER) AS h,
+              con.execute("""SELECT CAST(strftime('%H', ts + 19800, 'unixepoch') AS INTEGER) AS h,
                              AVG(down_mbps), AVG(up_mbps), COUNT(*) FROM speeds GROUP BY h ORDER BY h""")]
     return status, outages, {"recent": raw, "daily": daily, "hourly": hourly}
 
