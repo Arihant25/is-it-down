@@ -292,33 +292,120 @@ def hotspot_problem(con, name):
     return None
 
 
+WATCHDOG_REBOOT_EVERY = 6 * 3600  # never reboot for the hotspot more often than this
+
+
+def wifi_mmc_host():
+    """(driver dir, device name) of the SDIO controller the Wi-Fi chip sits on.
+
+    Only a controller whose card is SDIO, or one with no card at all (a crashed chip can
+    drop off the bus), qualifies. The SD card's controller always has its SD card, so it
+    can never be picked: unbinding it would take the root filesystem away.
+    """
+    empty = None
+    for host in sorted(os.listdir("/sys/class/mmc_host")):
+        path = f"/sys/class/mmc_host/{host}"
+        dev = os.path.realpath(f"{path}/device")
+        cards = [c for c in os.listdir(path) if c.startswith(f"{host}:")]
+        types = []
+        for c in cards:
+            try:
+                with open(f"{path}/{c}/type") as f:
+                    types.append(f.read().strip())
+            except OSError:
+                types.append("?")
+        driver = os.path.realpath(f"{dev}/driver") if os.path.exists(f"{dev}/driver") else None
+        if types == ["SDIO"]:
+            return driver, os.path.basename(dev)
+        if not cards:
+            empty = (driver, os.path.basename(dev))
+    return empty
+
+
+def power_cycle_wifi(con):
+    """Cut the Wi-Fi chip's power (the WL_ON line) with its SDIO controller detached.
+
+    After a firmware crash the chip stays wedged ("bad CIS tuple") through driver reloads
+    and controller rebinds; only removing its power resets it, short of a reboot.
+    """
+    host = wifi_mmc_host()
+    if host and host[0]:
+        with con:
+            meta_set(con, "wifi_mmc_driver", host[0])
+    driver = host[0] if host and host[0] else meta_get(con, "wifi_mmc_driver")
+    dev = host[1] if host else None
+    if not driver or not dev:
+        log("no SDIO controller found for the Wi-Fi chip")
+        return False
+    run(["modprobe", "-r", "brcmfmac"], timeout=30)
+    if os.path.exists(f"/sys/bus/platform/devices/{dev}/driver"):
+        with open(f"{driver}/unbind", "w") as f:
+            f.write(dev)
+        time.sleep(1)
+    run(["gpioset", "-p", "1s", "-t", "0", "WL_ON=0"])
+    run(["gpioset", "-p", "300ms", "-t", "0", "WL_ON=1"])
+    with open(f"{driver}/bind", "w") as f:
+        f.write(dev)
+    time.sleep(3)
+    run(["modprobe", "brcmfmac"], timeout=30)
+    time.sleep(10)
+    return True
+
+
 def hotspot_watchdog(con):
     name = hotspot_connection()
     if not name:
         return
     problem = hotspot_problem(con, name)
+    streak = int(meta_get(con, "hotspot_fail_streak", 0))
     if not problem:
+        if streak:
+            with con:
+                meta_set(con, "hotspot_fail_streak", 0)
         return
     last = int(meta_get(con, "hotspot_restart", 0))
     if time.time() - last < HOTSPOT_RESTART_COOLDOWN:
         log(f"hotspot problem ({problem}), in cooldown")
         return
-    log(f"hotspot problem: {problem}; restarting the hotspot")
-    run(["/usr/sbin/iw", "dev", "wlan0", "set", "power_save", "off"])
-    r = run(["nmcli", "con", "up", name], timeout=60)
-    action = "nmcli up"
-    time.sleep(5)
-    if hotspot_problem(con, name) and not (r and r.returncode == 0):
-        log("nmcli up failed; reloading brcmfmac")
-        run(["modprobe", "-r", "brcmfmac"], timeout=30)
-        time.sleep(2)
-        run(["modprobe", "brcmfmac"], timeout=30)
-        time.sleep(10)
-        run(["nmcli", "con", "up", name], timeout=60)
-        action = "driver reload"
+
+    # Escalate one step per attempt: reconnect/reload, then power-cycle the chip,
+    # then reboot (rate-limited), which is what a human would end up doing.
+    last_reboot = float(meta_get(con, "watchdog_reboot", 0))
+    if streak >= 2 and time.time() - last_reboot > WATCHDOG_REBOOT_EVERY:
+        log(f"hotspot problem: {problem}; still broken after {streak} attempts, rebooting")
+        with con:
+            meta_set(con, "watchdog_reboot", time.time())
+            meta_set(con, "hotspot_restart", int(time.time()))
+            meta_set(con, "hotspot_fail_streak", 0)
+            con.execute("INSERT INTO hotspot_events VALUES (?,?,?,?)", (int(time.time()), problem, "reboot", 0))
+        run(["systemctl", "reboot"])
+        return
+
+    log(f"hotspot problem: {problem}; restarting the hotspot (attempt {streak + 1})")
+    if streak == 0:
+        run(["/usr/sbin/iw", "dev", "wlan0", "set", "power_save", "off"])
+        r = run(["nmcli", "con", "up", name], timeout=40)
+        action = "nmcli up"
+        time.sleep(5)
+        if hotspot_problem(con, name) and not (r and r.returncode == 0):
+            log("nmcli up failed; reloading brcmfmac")
+            run(["modprobe", "-r", "brcmfmac"], timeout=30)
+            time.sleep(2)
+            run(["modprobe", "brcmfmac"], timeout=30)
+            time.sleep(10)
+            run(["nmcli", "con", "up", name], timeout=40)
+            action = "driver reload"
+    else:
+        log("power-cycling the Wi-Fi chip")
+        power_cycle_wifi(con)
+        run(["/usr/sbin/iw", "dev", "wlan0", "set", "power_save", "off"])
+        run(["nmcli", "con", "up", name], timeout=40)
+        action = "power cycle"
+    time.sleep(3)
     ok = hotspot_problem(con, name) is None
     with con:
         meta_set(con, "hotspot_restart", int(time.time()))
+        meta_set(con, "hotspot_fail_streak", 0 if ok else streak + 1)
         con.execute("INSERT INTO hotspot_events VALUES (?,?,?,?)", (int(time.time()), problem, action, int(ok)))
     log(f"hotspot {action}: {'recovered' if ok else 'still broken'}")
 

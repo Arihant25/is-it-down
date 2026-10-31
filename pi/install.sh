@@ -14,6 +14,9 @@ if ! command -v speedtest >/dev/null; then
   rm -rf "$tmp"
 fi
 
+# gpioset: the hotspot watchdog power-cycles a crashed Wi-Fi chip through its WL_ON line
+command -v gpioset >/dev/null || apt-get install -y gpiod
+
 # Deploy key (its public half must be added to the GitHub repo with write access)
 [ -f "$STATE/deploy_key" ] || ssh-keygen -q -t ed25519 -N "" -C bakul-lan-pi -f "$STATE/deploy_key"
 
@@ -75,7 +78,7 @@ Persistent=false
 WantedBy=timers.target
 EOF
 }
-unit probe   '*:*:00'          110  # a run that overlaps the next minute just skips it
+unit probe   '*:*:00'          170  # a run that overlaps the next minute just skips it
 unit speed   '00/3:00:00'      240  2h55min  # random time in each 3-hour window
 unit publish '*:0/5:30'        120
 unit prune   '*-*-* 04:10:00'  600
