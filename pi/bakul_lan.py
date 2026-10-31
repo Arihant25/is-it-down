@@ -286,7 +286,8 @@ def hotspot_problem(con, name):
     if r is not None:
         bad = [l for l in r.stdout.splitlines()
                if "brcmf" in l and re.search(r"error|fail|timeout|firmware has halted", l, re.I)
-               and "txcap_blob" not in l]
+               and "txcap_blob" not in l
+               and "vndr ie set error : -52" not in l]  # logged on every AP start; harmless
         if bad:
             return "driver error: " + bad[-1][:200]
     return None
