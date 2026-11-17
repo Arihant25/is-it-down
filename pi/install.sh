@@ -32,6 +32,8 @@ nmcli -t -f NAME,TYPE con show | while IFS= read -r line; do
     nmcli con modify "$name" 802-11-wireless.powersave 2
 done || true
 /usr/sbin/iw dev wlan0 set power_save off || true
+# Restrict a password-protected hotspot to plain WPA-PSK, so Android phones can join
+install -m 755 90-bakul-hotspot-psk /etc/NetworkManager/dispatcher.d/90-bakul-hotspot-psk
 
 # Wired LAN: give 802.1X authentication longer than the 25 s default before it counts as a
 # failure (the agent's LAN watchdog also reconnects if NetworkManager gives up).

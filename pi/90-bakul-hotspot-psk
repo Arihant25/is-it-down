@@ -1,0 +1,23 @@
+#!/bin/sh
+# NetworkManager dispatcher hook for the Pi's hotspot.
+#
+# NetworkManager 1.52 offers WPA-PSK and WPA-PSK-SHA256 in a WPA2 hotspot's 4-way
+# handshake, but the Pi 3B's BCM43430 firmware advertises only WPA-PSK in its beacons.
+# Strict clients (Android) see the mismatch and drop the handshake (reason 17), while
+# Windows doesn't mind. NetworkManager has no setting for this, so once the hotspot is
+# up, restrict it to plain WPA-PSK and restart the access point.
+[ "$1" = wlan0 ] && [ "$2" = up ] || exit 0
+[ "$(nmcli -g 802-11-wireless.mode con show "$CONNECTION_ID" 2>/dev/null)" = ap ] || exit 0
+
+id=$(wpa_cli -i wlan0 list_networks | awk -F'\t' 'NR > 1 && $4 ~ /CURRENT/ { print $1 }')
+[ -n "$id" ] || exit 0
+case "$(wpa_cli -i wlan0 get_network "$id" key_mgmt)" in
+  *WPA-PSK-SHA256*) ;;
+  *) exit 0 ;;
+esac
+
+wpa_cli -i wlan0 set_network "$id" key_mgmt WPA-PSK
+wpa_cli -i wlan0 disable_network "$id"
+sleep 2
+wpa_cli -i wlan0 enable_network "$id"
+logger -t bakul-hotspot "restricted hotspot to WPA-PSK (was WPA-PSK WPA-PSK-SHA256)"
